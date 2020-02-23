@@ -196,3 +196,86 @@ test_loader = DataLoader(test_dataset,
                           batch_size=batch_size,
                           shuffle=True, 
                           num_workers=4)
+
+import torch.optim as optim
+lr=0.001
+criterion = nn.MSELoss()
+optimizer = optim.Adam(net.parameters(), lr=lr)
+
+
+
+def net_sample_output():    
+    for i, sample in enumerate(test_loader):        
+        images = sample['image']
+        key_pts = sample['keypoints']
+        images = images.type(torch.FloatTensor).to(device)
+        output_pts = net(images)        
+        output_pts = output_pts.view(output_pts.size()[0], 68, -1)        
+        if i == 0:
+            return images, output_pts, key_pts
+
+def train_net(n_epochs):
+    valid_loss_min = np.Inf    
+    history = {'train_loss': [], 'valid_loss': [], 'epoch': []}
+
+    for epoch in range(n_epochs):  
+        train_loss = 0.0
+        valid_loss = 0.0  
+        net.train()
+        running_loss = 0.0
+        for batch_i, data in enumerate(train_loader):
+            images = data['image']
+            key_pts = data['keypoints']
+            key_pts = key_pts.view(key_pts.size(0), -1)
+            key_pts = key_pts.type(torch.FloatTensor).to(device)
+            images = images.type(torch.FloatTensor).to(device)
+            output_pts = net(images)
+            loss = criterion(output_pts, key_pts)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()*images.data.size(0)      
+        net.eval() 
+        
+        with torch.no_grad():
+            for batch_i, data in enumerate(test_loader):
+                images = data['image']
+                key_pts = data['keypoints']
+                key_pts = key_pts.view(key_pts.size(0), -1)
+                key_pts = key_pts.type(torch.FloatTensor).to(device)
+                images = images.type(torch.FloatTensor).to(device)
+                output_pts = net(images)
+                loss = criterion(output_pts, key_pts)          
+                valid_loss += loss.item()*images.data.size(0) 
+        train_loss = train_loss/len(train_loader.dataset)
+        valid_loss = valid_loss/len(test_loader.dataset) 
+        print('Epoch: {} \tTraining Loss: {:.6f}'.format(epoch+1,train_loss,valid_loss))
+        
+        if valid_loss <= valid_loss_min:
+            print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min,valid_loss))    
+            torch.save(net,f'E:\\Projects\\udacity_cv\\P1\\epoch{epoch + 1}_loss{valid_loss}.pth')
+            valid_loss_min = valid_loss
+        history['epoch'].append(epoch + 1)
+        history['train_loss'].append(train_loss)
+        history['valid_loss'].append(valid_loss)
+    print('Finished Training')
+    return history
+
+n_epochs = 15 
+history=train_net(n_epochs)
+
+import matplotlib.pyplot as plt
+
+train_loss=history['train_loss']
+val_loss=history['valid_loss']
+history.keys()
+
+epochs= range(1,len(train_loss)+1)
+
+plt.plot(epochs, train_loss, 'bo', label='Training Loss')
+plt.plot(epochs, val_loss, 'b', label='validation Loss')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.show()
